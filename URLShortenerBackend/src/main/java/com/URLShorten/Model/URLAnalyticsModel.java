@@ -1,0 +1,26 @@
+package com.URLShorten.Model;
+
+import java.time.LocalDateTime;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.Data;
+
+@Data
+@Entity
+@Table(name = "URLAnalysis")
+public class URLAnalyticsModel{
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String customAlias;
+    private String ip;
+    private LocalDateTime timestamp;
+    private Boolean ownUser = false;
+    private String browserName;
+    private String osName;
+    String topic;
+}
