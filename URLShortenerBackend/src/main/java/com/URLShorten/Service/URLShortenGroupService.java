@@ -2,7 +2,10 @@ package com.URLShorten.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +23,7 @@ import com.URLShorten.Repository.URLShortenerRepo;
 import com.google.gson.Gson;
 
 import jakarta.servlet.http.HttpServletRequest;
+import redis.clients.jedis.UnifiedJedis;
 
 @Service
 public class URLShortenGroupService {
@@ -181,15 +185,33 @@ public class URLShortenGroupService {
     public String redirectShortenGroupURL(String customAlias,String userAgent,HttpServletRequest request){
         String ip = request.getRemoteAddr();
 
-        
-        List<URLShortenGroupModel> reponseLinks = urlShortenerGroupRepo.findByCustomAlias(customAlias);
+        UnifiedJedis jedis = new UnifiedJedis("redis://localhost:6379");
+        String topic = "", longURL = "";
+
         List<String> longURLs = new ArrayList<>();
-        
-        for(URLShortenGroupModel response : reponseLinks){
-            String url = response.getLongURLs();
-            longURLs.add(url);
+        if(jedis.hget("urlshorten_info:"+customAlias,"customAlias") != null){
+            topic = jedis.hget("urlshorten_info:"+customAlias,"topic");
+            longURL = jedis.hget("urlshorten_info:"+customAlias,"longURL");
+            longURLs = new ArrayList<String>(Arrays.asList(longURL.split(",")));
+            jedis.hexpire("urlshorten_info:"+customAlias,60*60*24,"customAlias","topic","longURL");
         }
-        URLAnalyticsModel analysisModel = saveAnalysisRecord(userAgent, customAlias, ip,reponseLinks.get(0).getTopic());
+        else{
+            List<URLShortenGroupModel> reponseLinks = urlShortenerGroupRepo.findByCustomAlias(customAlias);
+            for(URLShortenGroupModel response : reponseLinks){
+                String url = response.getLongURLs();
+                longURLs.add(url);
+            }
+            topic = reponseLinks.get(0).getTopic();
+            Map<String, String> redisRecord = new HashMap<>();
+            longURL = String.join(",", longURLs);
+            redisRecord.put("customAlias",customAlias);
+            redisRecord.put("longURL",longURL);
+            redisRecord.put("topic",topic);
+            Long res1 = jedis.hset("urlshorten_info:"+customAlias, redisRecord);
+            System.out.println(res1);
+        }
+        jedis.close();
+        URLAnalyticsModel analysisModel = saveAnalysisRecord(userAgent, customAlias, ip,topic);
         urlAnalyticsRepo.save(analysisModel);
 
         Gson gson = new Gson();

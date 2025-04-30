@@ -1,6 +1,8 @@
 package com.URLShorten.Service;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -10,6 +12,7 @@ import com.URLShorten.Model.*;
 import com.URLShorten.Repository.*;
 
 import jakarta.servlet.http.HttpServletRequest;
+import redis.clients.jedis.UnifiedJedis;
 
 
 @Service
@@ -147,14 +150,32 @@ public class URLShortenService {
         String ip = request.getRemoteAddr();
         HttpHeaders headers = new HttpHeaders();
 
-        URLShortenModel responsRecord = urlShortenerRepo.findById(customAlias).get();
+        UnifiedJedis jedis = new UnifiedJedis("redis://localhost:6379");
+        String topic = "", longURL = "";
+        if(jedis.hget("urlshorten_info:"+customAlias,"customAlias") != null){
+            topic = jedis.hget("urlshorten_info:"+customAlias,"topic");
+            longURL = jedis.hget("urlshorten_info:"+customAlias,"longURL");
+            jedis.hexpire("urlshorten_info:"+customAlias,60*60*24,"customAlias","topic","longURL");
+        }
+        else{
+            URLShortenModel responsRecord = urlShortenerRepo.findById(customAlias).get();
+            topic = responsRecord.getTopic();
+            longURL = responsRecord.getLongURL();
+            Map<String, String> redisRecord = new HashMap<>();
+            redisRecord.put("customAlias",customAlias);
+            redisRecord.put("longURL",longURL);
+            redisRecord.put("topic",topic);
+            Long res1 = jedis.hset("urlshorten_info:"+customAlias, redisRecord);
+            System.out.println(res1);
+        }
 
-        headers.add("Location",responsRecord.getLongURL());
+        headers.add("Location",longURL);
         // "Hey, this resource isn't here — go to this new location instead."
         // This is done using HTTP status 302 (Found) and the Location header.
 
+        jedis.close();
         
-        URLAnalyticsModel analysisModel = saveAnalysisRecord(userAgent, customAlias, ip,responsRecord.getTopic());
+        URLAnalyticsModel analysisModel = saveAnalysisRecord(userAgent, customAlias, ip,topic);
         urlAnalyticsRepo.save(analysisModel);
 
         return headers;
